@@ -61,9 +61,14 @@ CREATE TABLE IF NOT EXISTS public.events (
     mrp NUMERIC(10, 2) NOT NULL DEFAULT 0,
     offer_price NUMERIC(10, 2) NOT NULL DEFAULT 0,
     capacity INTEGER NOT NULL DEFAULT 100 CHECK (capacity >= 1),
+    ticket_tiers JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Backward-compatibility & Migration helpers:
+-- ALTER TABLE public.events ADD COLUMN IF NOT EXISTS ticket_tiers JSONB DEFAULT '[]'::jsonb;
+-- ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS tier_title TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_events_creator_id ON public.events(creator_id);
 CREATE INDEX IF NOT EXISTS idx_events_is_active ON public.events(is_active);
@@ -83,6 +88,7 @@ CREATE TABLE IF NOT EXISTS public.bookings (
     attendee_email TEXT NOT NULL,
     attendee_phone TEXT NOT NULL,
     attendee_address TEXT,
+    tier_title TEXT,
     status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'pending', 'cancelled', 'refunded')),
     qr_ticket_code TEXT UNIQUE NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -143,7 +149,8 @@ CREATE OR REPLACE FUNCTION public.book_event_tickets(
     p_payment_id TEXT,
     p_razorpay_order_id TEXT,
     p_razorpay_payment_id TEXT,
-    p_razorpay_signature TEXT
+    p_razorpay_signature TEXT,
+    p_tier_title TEXT DEFAULT NULL
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -176,9 +183,43 @@ BEGIN
 
     v_remaining_seats := v_event.capacity - v_total_booked;
 
-    -- 3. Check capacity availability
+    -- 3. Check total capacity availability
     IF v_remaining_seats < p_ticket_count THEN
-        RAISE EXCEPTION 'Insufficient tickets remaining. Only % tickets left.', v_remaining_seats;
+        RAISE EXCEPTION 'Insufficient tickets remaining. Only % total spots left.', v_remaining_seats;
+    END IF;
+
+    -- 3b. If event has ticket_tiers with tier capacity specified, enforce tier capacity
+    IF p_tier_title IS NOT NULL AND v_event.ticket_tiers IS NOT NULL AND jsonb_array_length(v_event.ticket_tiers) > 0 THEN
+        DECLARE
+            v_tier JSONB;
+            v_tier_cap INTEGER := NULL;
+            v_tier_booked INTEGER := 0;
+            v_tier_remaining INTEGER;
+        BEGIN
+            FOR v_tier IN SELECT * FROM jsonb_array_elements(v_event.ticket_tiers)
+            LOOP
+                IF lower(trim(v_tier->>'title')) = lower(trim(p_tier_title)) THEN
+                    IF (v_tier->>'capacity') IS NOT NULL AND (v_tier->>'capacity') <> '' THEN
+                        v_tier_cap := (v_tier->>'capacity')::INTEGER;
+                    END IF;
+                    EXIT;
+                END IF;
+            END LOOP;
+
+            IF v_tier_cap IS NOT NULL AND v_tier_cap > 0 THEN
+                SELECT COALESCE(SUM(ticket_count), 0)
+                INTO v_tier_booked
+                FROM public.bookings
+                WHERE event_id = p_event_id
+                  AND lower(trim(COALESCE(tier_title, ''))) = lower(trim(p_tier_title))
+                  AND status IN ('confirmed', 'pending');
+
+                v_tier_remaining := v_tier_cap - v_tier_booked;
+                IF v_tier_remaining < p_ticket_count THEN
+                    RAISE EXCEPTION 'This tier (%) is sold out or has only % spot(s) remaining.', p_tier_title, v_tier_remaining;
+                END IF;
+            END IF;
+        END;
     END IF;
 
     -- 4. Generate unique QR Ticket Code
@@ -198,6 +239,7 @@ BEGIN
         attendee_email,
         attendee_phone,
         attendee_address,
+        tier_title,
         status,
         qr_ticket_code
     ) VALUES (
@@ -213,6 +255,7 @@ BEGIN
         p_attendee_email,
         p_attendee_phone,
         p_attendee_address,
+        p_tier_title,
         'confirmed',
         v_qr_code
     )

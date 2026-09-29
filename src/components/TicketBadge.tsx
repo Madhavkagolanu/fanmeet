@@ -84,7 +84,9 @@ export default function TicketBadge({ booking }: TicketBadgeProps) {
             <span className="font-bold text-neutral-900 truncate block">{booking.attendee_name}</span>
           </div>
           <div>
-            <span className="text-[10px] uppercase font-bold text-neutral-400 block">Tickets</span>
+            <span className="text-[10px] uppercase font-bold text-neutral-400 block">
+              {booking.tier_title ? `Tier: ${booking.tier_title}` : 'Tickets'}
+            </span>
             <span className="font-bold text-neutral-900 block">{booking.ticket_count} Pass(es)</span>
           </div>
           <div>

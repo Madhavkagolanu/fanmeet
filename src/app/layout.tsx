@@ -7,6 +7,9 @@ import Footer from '@/components/Footer';
 export const metadata: Metadata = {
   title: 'FANMEET | Creator Fanmeets, Dance Jams & Workshops',
   description: 'Minimalist ticketing and fanmeet platform for creators, dancers, musicians, and community jams.',
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({

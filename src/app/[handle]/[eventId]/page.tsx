@@ -23,7 +23,7 @@ import {
   Link as LinkIcon,
 } from 'lucide-react';
 import { getCreatorByHandle, getEventById } from '@/lib/supabase/db';
-import { EventItem, Creator, Booking } from '@/types';
+import { EventItem, Creator, Booking, TicketTier } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { initializeRazorpayPayment } from '@/lib/razorpay-client';
 import { getAppBaseUrl } from '@/lib/utils';
@@ -45,6 +45,7 @@ export default function EventDetailPage() {
 
   // Booking Form State
   const [ticketCount, setTicketCount] = useState<number>(1);
+  const [selectedTierIndex, setSelectedTierIndex] = useState<number>(0);
   const [attendeeName, setAttendeeName] = useState('');
   const [attendeeEmail, setAttendeeEmail] = useState('');
   const [attendeePhone, setAttendeePhone] = useState('');
@@ -116,24 +117,59 @@ export default function EventDetailPage() {
     );
   }
 
+  // Derive ticket tiers (falls back to event.mrp / event.offer_price)
+  const availableTiers: TicketTier[] =
+    event.ticket_tiers && event.ticket_tiers.length > 0
+      ? event.ticket_tiers
+      : [
+          {
+            title: 'Standard',
+            mrp: event.mrp,
+            offer_price: event.offer_price,
+            capacity: event.capacity,
+          },
+        ];
+
+  const currentTier = availableTiers[selectedTierIndex] || availableTiers[0];
   const bookedCount = event.booked_count || 0;
-  const remainingSeats = Math.max(0, event.capacity - bookedCount);
+  const remainingTotalSeats = Math.max(0, event.capacity - bookedCount);
+
+  // Tier-specific remaining calculation
+  const currentTierCapacity = currentTier.capacity || event.capacity;
+  const currentTierBooked = currentTier.booked_count || 0;
+  const currentTierRemaining = Math.max(0, currentTierCapacity - currentTierBooked);
+  const remainingSeats = Math.min(remainingTotalSeats, currentTierRemaining);
+
+  const eventEndTime = new Date(event.to_time || event.from_time).getTime();
+  const isPast = !isNaN(eventEndTime) && eventEndTime < Date.now();
   const isInactive = event.is_active === false;
-  const isSoldOut = remainingSeats === 0 || isInactive;
-  const totalPrice = ticketCount * event.offer_price;
-  const totalSavings = ticketCount * Math.max(0, event.mrp - event.offer_price);
+  const isSoldOut = remainingTotalSeats <= 0;
+  const isCurrentTierSoldOut = currentTierRemaining <= 0;
+  const isBookingClosed = isPast || isInactive || isSoldOut || isCurrentTierSoldOut;
+  const unitPrice = currentTier.offer_price;
+  const unitMrp = currentTier.mrp;
+  const totalPrice = ticketCount * unitPrice;
+  const totalSavings = ticketCount * Math.max(0, unitMrp - unitPrice);
 
   const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBookingError(null);
 
-    if (isInactive) {
-      setBookingError('Bookings for this event are currently paused by the creator.');
+    if (isBookingClosed) {
+      if (isPast) {
+        setBookingError('This event has already ended. Bookings are closed.');
+      } else if (isInactive) {
+        setBookingError('Bookings for this event are currently paused by the creator.');
+      } else if (isCurrentTierSoldOut) {
+        setBookingError(`"${currentTier.title}" passes are sold out. Please select another tier.`);
+      } else {
+        setBookingError('Sorry, this event is already fully booked.');
+      }
       return;
     }
 
     if (remainingSeats < ticketCount) {
-      setBookingError('Sorry, this event is already fully booked.');
+      setBookingError(`Only ${remainingSeats} ticket(s) remaining for "${currentTier.title}".`);
       return;
     }
 
@@ -168,6 +204,7 @@ export default function EventDetailPage() {
                 attendeeEmail,
                 attendeePhone,
                 attendeeAddress,
+                tierTitle: currentTier.title,
                 paymentId: paymentData.paymentId,
                 orderId: paymentData.orderId,
                 signature: paymentData.signature,
@@ -190,6 +227,7 @@ export default function EventDetailPage() {
               razorpay_signature: paymentData.signature,
               ticket_count: ticketCount,
               amount_paid: totalPrice,
+              tier_title: currentTier.title,
               attendee_name: attendeeName,
               attendee_email: attendeeEmail,
               attendee_phone: attendeePhone,
@@ -200,8 +238,21 @@ export default function EventDetailPage() {
               event: event,
             };
 
-            // Update UI state with confirmed booking
-            setEvent((prev) => (prev ? { ...prev, booked_count: (prev.booked_count || 0) + ticketCount } : prev));
+            // Update UI state with confirmed booking and update tier booked_count
+            setEvent((prev) => {
+              if (!prev) return prev;
+              const updatedTiers = (prev.ticket_tiers || []).map((t) => {
+                if ((t.title || '').trim().toLowerCase() === currentTier.title.trim().toLowerCase()) {
+                  return { ...t, booked_count: (t.booked_count || 0) + ticketCount };
+                }
+                return t;
+              });
+              return {
+                ...prev,
+                ticket_tiers: updatedTiers,
+                booked_count: (prev.booked_count || 0) + ticketCount,
+              };
+            });
             setConfirmedBooking(newBooking);
             setIsProcessing(false);
 
@@ -264,7 +315,11 @@ export default function EventDetailPage() {
                 className="object-cover"
               />
               <div className="absolute top-4 left-4">
-                {isInactive ? (
+                {isPast ? (
+                  <span className="px-3.5 py-1.5 bg-neutral-800 text-white text-xs font-black uppercase tracking-wider rounded-full shadow-lg">
+                    EVENT ENDED
+                  </span>
+                ) : isInactive ? (
                   <span className="px-3.5 py-1.5 bg-red-600 text-white text-xs font-black uppercase tracking-wider rounded-full shadow-lg">
                     BOOKINGS CLOSED
                   </span>
@@ -409,6 +464,24 @@ export default function EventDetailPage() {
                     Book Another Ticket
                   </button>
                 </div>
+              ) : isPast ? (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 rounded-full bg-neutral-100 border border-neutral-300 flex items-center justify-center mx-auto mb-4 text-neutral-400">
+                    <Lock className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-2xl font-black uppercase text-neutral-950 mb-2">
+                    Event Ended
+                  </h3>
+                  <p className="text-xs text-neutral-500 font-medium mb-6">
+                    This event has concluded. Bookings and registration are now closed.
+                  </p>
+                  <Link
+                    href={`/${handle}`}
+                    className="block w-full py-3.5 px-6 rounded-2xl bg-black text-white font-bold text-xs uppercase tracking-wider hover:bg-neutral-800 transition-all text-center"
+                  >
+                    Check Other Events by @{handle}
+                  </Link>
+                </div>
               ) : isInactive ? (
                 <div className="text-center py-8">
                   <div className="w-16 h-16 rounded-full bg-red-50 border border-red-200 flex items-center justify-center mx-auto mb-4 text-red-500">
@@ -447,51 +520,137 @@ export default function EventDetailPage() {
                 </div>
               ) : (
                 <form onSubmit={handleBookingSubmit} className="space-y-6">
-                  {/* Pricing Header */}
+                  {/* Tier Selection */}
                   <div>
-                    <span className="text-[10px] uppercase font-black text-neutral-400 tracking-widest block">
-                      Ticket Price
-                    </span>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-4xl font-black text-neutral-950">
-                        ₹{event.offer_price}
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-black uppercase text-neutral-800">
+                        Select Ticket Tier
+                      </label>
+                      <span className="text-[10px] uppercase font-bold text-neutral-400">
+                        {availableTiers.length} Options
                       </span>
-                      {event.mrp > event.offer_price && (
-                        <span className="text-sm font-bold text-neutral-400 line-through">
-                          ₹{event.mrp}
-                        </span>
-                      )}
-                      <span className="text-xs font-bold text-neutral-500">
-                        / ticket
-                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {availableTiers.map((tier, idx) => {
+                        const isSelected = selectedTierIndex === idx;
+                        const savings = Math.max(0, tier.mrp - tier.offer_price);
+                        const tierCap = tier.capacity || event.capacity;
+                        const tierBooked = tier.booked_count || 0;
+                        const tierRem = Math.max(0, tierCap - tierBooked);
+                        const isTierSoldOut = tierRem <= 0 || remainingTotalSeats <= 0;
+
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            disabled={isTierSoldOut}
+                            onClick={() => {
+                              setSelectedTierIndex(idx);
+                              setTicketCount(1);
+                            }}
+                            className={`p-3.5 rounded-2xl text-left transition-all border-2 flex flex-col justify-between ${
+                              isTierSoldOut
+                                ? 'bg-neutral-100 border-neutral-200 text-neutral-400 cursor-not-allowed opacity-60'
+                                : isSelected
+                                ? 'bg-black text-white border-black shadow-md cursor-pointer'
+                                : 'bg-neutral-50/80 hover:bg-neutral-100/80 text-neutral-900 border-neutral-200 cursor-pointer'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <span className="text-xs font-black uppercase tracking-tight">
+                                {tier.title}
+                              </span>
+                              {isTierSoldOut ? (
+                                <span className="text-[9px] font-black uppercase bg-neutral-200 text-neutral-600 px-1.5 py-0.5 rounded">
+                                  Sold Out
+                                </span>
+                              ) : savings > 0 ? (
+                                <span
+                                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
+                                    isSelected
+                                      ? 'bg-emerald-400 text-black'
+                                      : 'bg-emerald-100 text-emerald-800'
+                                  }`}
+                                >
+                                  Save ₹{savings}
+                                </span>
+                              ) : (
+                                <span
+                                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
+                                    isSelected ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-200 text-neutral-600'
+                                  }`}
+                                >
+                                  {tierRem} Left
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-baseline justify-between gap-1.5 mt-0.5">
+                              <div className="flex items-baseline gap-1.5">
+                                <span className="text-xl font-black">₹{tier.offer_price}</span>
+                                {tier.mrp > tier.offer_price && (
+                                  <span
+                                    className={`text-xs line-through font-semibold ${
+                                      isSelected ? 'text-neutral-400' : 'text-neutral-400'
+                                    }`}
+                                  >
+                                    ₹{tier.mrp}
+                                  </span>
+                                )}
+                              </div>
+                              {!isTierSoldOut && savings > 0 && (
+                                <span
+                                  className={`text-[9px] font-medium ${
+                                    isSelected ? 'text-neutral-300' : 'text-neutral-500'
+                                  }`}
+                                >
+                                  {tierRem} spots
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
                   {/* Quantity Selector */}
                   <div>
-                    <label className="block text-xs font-black uppercase text-neutral-800 mb-2">
-                      Quantity of Passes
-                    </label>
-                    <div className="flex items-center gap-2">
-                      {[1, 2, 3, 4].map((num) => {
-                        if (num > remainingSeats) return null;
-                        const isSelected = ticketCount === num;
-                        return (
-                          <button
-                            key={num}
-                            type="button"
-                            onClick={() => setTicketCount(num)}
-                            className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all border ${
-                              isSelected
-                                ? 'bg-black text-white border-black shadow-xs'
-                                : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black'
-                            }`}
-                          >
-                            {num}
-                          </button>
-                        );
-                      })}
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-black uppercase text-neutral-800">
+                        Quantity of Passes ({currentTier.title})
+                      </label>
+                      <span className="text-[10px] font-bold text-neutral-500">
+                        {isCurrentTierSoldOut ? 'Sold out' : `${remainingSeats} spots available`}
+                      </span>
                     </div>
+
+                    {isCurrentTierSoldOut ? (
+                      <div className="p-3 rounded-xl bg-neutral-100 border border-neutral-200 text-xs font-bold text-neutral-500 text-center">
+                        This tier is sold out. Please select another tier above.
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        {[1, 2, 3, 4].map((num) => {
+                          if (num > remainingSeats) return null;
+                          const isSelected = ticketCount === num;
+                          return (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => setTicketCount(num)}
+                              className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all border ${
+                                isSelected
+                                  ? 'bg-black text-white border-black shadow-xs'
+                                  : 'bg-neutral-50 text-neutral-800 border-neutral-200 hover:border-black'
+                              }`}
+                            >
+                              {num}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Attendee Details Form / Login Guard */}
@@ -582,7 +741,9 @@ export default function EventDetailPage() {
                   {/* Summary Breakdown */}
                   <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200 space-y-2 text-xs">
                     <div className="flex justify-between text-neutral-600">
-                      <span>{ticketCount} x Pass (₹{event.offer_price})</span>
+                      <span>
+                        {ticketCount} x {currentTier.title} (₹{unitPrice})
+                      </span>
                       <span className="font-bold text-neutral-900">₹{totalPrice}</span>
                     </div>
                     {totalSavings > 0 && (

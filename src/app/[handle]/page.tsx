@@ -260,8 +260,30 @@ export default function CreatorProfilePage() {
             {events.map((event) => {
               const booked = event.booked_count || 0;
               const remaining = Math.max(0, event.capacity - booked);
-              const isSoldOut = remaining === 0 || !event.is_active;
+              const eventEndTime = new Date(event.to_time || event.from_time).getTime();
+              const isPast = !isNaN(eventEndTime) && eventEndTime < Date.now();
+              const isSoldOut = remaining <= 0;
+              const isInactive = !event.is_active;
+              const isActionDisabled = isPast || isInactive || isSoldOut;
               const eventLink = `/${creator.handle}/${event.id}`;
+
+              let badgeText = `${remaining} Left`;
+              let badgeClass = 'bg-white/95 backdrop-blur-xs text-neutral-900 border border-neutral-300';
+              let buttonText = 'Get Pass';
+
+              if (isPast) {
+                badgeText = 'EVENT ENDED';
+                badgeClass = 'bg-neutral-800 text-white';
+                buttonText = 'Ended';
+              } else if (isInactive) {
+                badgeText = 'BOOKINGS CLOSED';
+                badgeClass = 'bg-red-600 text-white';
+                buttonText = 'Closed';
+              } else if (isSoldOut) {
+                badgeText = 'SOLD OUT';
+                badgeClass = 'bg-black text-white';
+                buttonText = 'Sold Out';
+              }
 
               return (
                 <div
@@ -278,19 +300,9 @@ export default function CreatorProfilePage() {
                       className="object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute top-3 left-3">
-                      {!event.is_active ? (
-                        <span className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-md">
-                          BOOKINGS CLOSED
-                        </span>
-                      ) : isSoldOut ? (
-                        <span className="px-2.5 py-1 bg-black text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-md">
-                          SOLD OUT
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 bg-white/95 backdrop-blur-xs text-neutral-900 text-[10px] font-black uppercase tracking-wider rounded-full border border-neutral-300 shadow-sm">
-                          {remaining} Left
-                        </span>
-                      )}
+                      <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-full shadow-md ${badgeClass}`}>
+                        {badgeText}
+                      </span>
                     </div>
                   </div>
 
@@ -344,28 +356,38 @@ export default function CreatorProfilePage() {
                       <div>
                         <div className="flex items-baseline gap-1.5">
                           <span className="text-xl font-black text-neutral-950">
-                            ₹{event.offer_price}
+                            {event.ticket_tiers && event.ticket_tiers.length > 1
+                              ? `From ₹${Math.min(...event.ticket_tiers.map((t) => t.offer_price))}`
+                              : `₹${event.offer_price}`}
                           </span>
-                          {event.mrp > event.offer_price && (
+                          {event.mrp > event.offer_price && (!event.ticket_tiers || event.ticket_tiers.length <= 1) && (
                             <span className="text-xs text-neutral-400 line-through font-semibold">
                               ₹{event.mrp}
                             </span>
                           )}
                         </div>
                         <span className="text-[10px] uppercase font-bold text-neutral-400">
-                          {!event.is_active ? 'Bookings Paused' : isSoldOut ? 'Capacity Full' : `${remaining}/${event.capacity} Available`}
+                          {isPast
+                            ? 'Concluded'
+                            : !event.is_active
+                            ? 'Bookings Paused'
+                            : isSoldOut
+                            ? 'Capacity Full'
+                            : event.ticket_tiers && event.ticket_tiers.length > 1
+                            ? `${event.ticket_tiers.length} Tiers Available`
+                            : `${remaining}/${event.capacity} Available`}
                         </span>
                       </div>
 
                       <div
                         className={`py-2.5 px-5 rounded-xl font-extrabold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 ${
-                          isSoldOut
+                          isActionDisabled
                             ? 'bg-neutral-100 text-neutral-400'
                             : 'bg-black text-white group-hover:bg-neutral-800 shadow-xs'
                         }`}
                       >
-                        <span>{!event.is_active ? 'Closed' : isSoldOut ? 'Sold Out' : 'Get Pass'}</span>
-                        {!isSoldOut && <ArrowRight className="w-3.5 h-3.5" />}
+                        <span>{buttonText}</span>
+                        {!isActionDisabled && <ArrowRight className="w-3.5 h-3.5" />}
                       </div>
                     </div>
                   </div>

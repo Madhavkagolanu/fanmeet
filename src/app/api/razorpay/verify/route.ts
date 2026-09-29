@@ -14,6 +14,7 @@ export async function POST(req: Request) {
       attendeeEmail,
       attendeePhone,
       attendeeAddress,
+      tierTitle,
       paymentId,
       orderId,
       signature,
@@ -41,6 +42,35 @@ export async function POST(req: Request) {
 
     // Call Supabase RPC for atomic capacity lock if configured
     if (isSupabaseConfigured()) {
+      // Validate event date and status
+      const { data: eventItem, error: eventErr } = await supabase
+        .from('events')
+        .select('id, capacity, from_time, to_time, is_active')
+        .eq('id', eventId)
+        .maybeSingle();
+
+      if (eventErr || !eventItem) {
+        return NextResponse.json(
+          { message: 'Event not found or invalid' },
+          { status: 404 }
+        );
+      }
+
+      if (!eventItem.is_active) {
+        return NextResponse.json(
+          { message: 'Bookings for this event are closed' },
+          { status: 400 }
+        );
+      }
+
+      const eventEndTime = new Date(eventItem.to_time || eventItem.from_time).getTime();
+      if (!isNaN(eventEndTime) && eventEndTime < Date.now()) {
+        return NextResponse.json(
+          { message: 'Cannot book passes for an event that has already ended' },
+          { status: 400 }
+        );
+      }
+
       const { data, error } = await supabase.rpc('book_event_tickets', {
         p_event_id: eventId,
         p_user_id: userId || null,
@@ -54,6 +84,7 @@ export async function POST(req: Request) {
         p_razorpay_order_id: orderId,
         p_razorpay_payment_id: paymentId,
         p_razorpay_signature: signature || '',
+        p_tier_title: tierTitle || null,
       });
 
       if (error) {
@@ -80,6 +111,7 @@ export async function POST(req: Request) {
         qr_ticket_code: qrTicketCode,
         ticket_count: ticketCount,
         amount_paid: amountPaid,
+        tier_title: tierTitle || undefined,
         event_id: eventId,
         attendee_name: attendeeName,
         attendee_email: attendeeEmail,

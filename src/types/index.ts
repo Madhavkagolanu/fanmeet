@@ -29,6 +29,15 @@ export interface Creator {
   updated_at?: string;
 }
 
+export interface TicketTier {
+  id?: string;
+  title: string;
+  mrp: number;
+  offer_price: number;
+  capacity: number; // Tier-specific seat capacity
+  booked_count?: number; // Calculated dynamically
+}
+
 export interface EventItem {
   id: string; // UUID
   creator_id: string; // UUID references Creator
@@ -45,6 +54,7 @@ export interface EventItem {
   mrp: number;
   offer_price: number;
   capacity: number;
+  ticket_tiers?: TicketTier[];
   booked_count?: number; // Calculated dynamically
   created_at: string;
   updated_at?: string;
@@ -65,6 +75,7 @@ export interface Booking {
   attendee_email: string;
   attendee_phone: string;
   attendee_address?: string;
+  tier_title?: string;
   status: 'confirmed' | 'pending' | 'cancelled' | 'refunded';
   qr_ticket_code: string;
   created_at: string;
@@ -83,4 +94,5 @@ export interface CreateEventInput {
   mrp: number;
   offer_price: number;
   capacity: number;
+  ticket_tiers?: TicketTier[];
 }

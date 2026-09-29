@@ -106,17 +106,30 @@ export default function HomePage() {
           </div>
 
           {/* Quick Creator Tags */}
-          <div className="mt-6 flex items-center justify-center flex-wrap gap-2 text-xs font-semibold text-neutral-500">
+          <div className="mt-6 flex items-center justify-center flex-wrap gap-2 text-xs font-semibold text-neutral-500 min-h-[32px]">
             <span>Explore creators:</span>
-            {creators.map((c) => (
-              <Link
-                key={c.id}
-                href={`/${c.handle}`}
-                className="px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-800 hover:bg-black hover:text-white transition-all font-mono"
-              >
-                @{c.handle}
-              </Link>
-            ))}
+            {loading ? (
+              <div className="flex items-center gap-2">
+                {[1, 2, 3].map((n) => (
+                  <span
+                    key={n}
+                    className="inline-block w-20 h-6 bg-neutral-200/70 rounded-full animate-pulse"
+                  />
+                ))}
+              </div>
+            ) : creators.length === 0 ? (
+              <span className="text-neutral-400 italic">No creators yet</span>
+            ) : (
+              creators.map((c) => (
+                <Link
+                  key={c.id}
+                  href={`/${c.handle}`}
+                  className="px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-800 hover:bg-black hover:text-white transition-all font-mono"
+                >
+                  @{c.handle}
+                </Link>
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -142,136 +155,198 @@ export default function HomePage() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {events.map((event) => {
-            const booked = event.booked_count || 0;
-            const remaining = Math.max(0, event.capacity - booked);
-            const isSoldOut = remaining === 0 || !event.is_active;
-            const creatorHandle = event.creator?.handle || 'creator';
-            const eventLink = `/${creatorHandle}/${event.id}`;
-            const fullEventUrl = `${getAppBaseUrl()}${eventLink}`;
-
-            return (
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((n) => (
               <div
-                key={event.id}
-                onClick={() => router.push(eventLink)}
-                className="group bg-white rounded-3xl border-2 border-neutral-200 overflow-hidden hover:border-black transition-all hover:shadow-xl flex flex-col justify-between cursor-pointer"
+                key={n}
+                className="bg-white rounded-3xl border-2 border-neutral-100 overflow-hidden shadow-xs flex flex-col justify-between"
               >
-                {/* Event Image Banner */}
                 <div>
-                  <div className="relative h-48 w-full bg-neutral-100 overflow-hidden">
-                    <Image
-                      src={event.image_url || 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800&auto=format&fit=crop&q=80'}
-                      alt={event.title}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    {/* Status Badge */}
-                    <div className="absolute top-3 left-3">
-                      {!event.is_active ? (
-                        <span className="px-3 py-1 bg-red-600 text-white text-[11px] font-black uppercase tracking-wider rounded-full shadow-md">
-                          BOOKINGS CLOSED
-                        </span>
-                      ) : isSoldOut ? (
-                        <span className="px-3 py-1 bg-black text-white text-[11px] font-black uppercase tracking-wider rounded-full shadow-md">
-                          SOLD OUT
-                        </span>
-                      ) : (
-                        <span className="px-3 py-1 bg-white/95 backdrop-blur-xs text-neutral-900 text-[11px] font-black uppercase tracking-wider rounded-full border border-neutral-300 shadow-sm">
-                          {remaining} Seats Left
-                        </span>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedQrUrl({
-                          title: event.title,
-                          url: fullEventUrl,
-                        });
-                      }}
-                      className="absolute top-3 right-3 p-2 bg-white/95 backdrop-blur-xs text-neutral-900 rounded-full border border-neutral-300 hover:bg-black hover:text-white transition-colors shadow-sm"
-                      title="Share QR"
-                    >
-                      <QrCode className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Event Content */}
-                  <div className="p-6">
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/${creatorHandle}`);
-                      }}
-                      className="text-xs font-bold text-neutral-500 hover:text-black uppercase tracking-wider inline-block mb-2 hover:underline"
-                    >
-                      @{creatorHandle}
-                    </span>
-
-                    <h3 className="text-lg font-black text-neutral-950 leading-snug group-hover:underline">
-                      {event.title}
-                    </h3>
-
-                    <p className="text-xs text-neutral-600 line-clamp-2 mt-2 font-medium">
-                      {event.description}
-                    </p>
-
-                    <div className="mt-4 space-y-2 text-xs text-neutral-600">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-3.5 h-3.5 text-neutral-900 shrink-0" />
-                        <span>
-                          {new Date(event.from_time).toLocaleDateString('en-US', {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                          })}{' '}
-                          • {new Date(event.from_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-3.5 h-3.5 text-neutral-900 shrink-0" />
-                        <span className="truncate">{event.location}</span>
-                      </div>
+                  <div className="h-48 w-full bg-neutral-200/70 animate-pulse" />
+                  <div className="p-6 space-y-3">
+                    <div className="w-20 h-4 bg-neutral-200/70 rounded animate-pulse" />
+                    <div className="w-4/5 h-6 bg-neutral-200/70 rounded animate-pulse" />
+                    <div className="w-full h-3 bg-neutral-200/70 rounded animate-pulse" />
+                    <div className="w-2/3 h-3 bg-neutral-200/70 rounded animate-pulse" />
+                    <div className="pt-2 space-y-2">
+                      <div className="w-1/2 h-3 bg-neutral-200/70 rounded animate-pulse" />
+                      <div className="w-1/3 h-3 bg-neutral-200/70 rounded animate-pulse" />
                     </div>
                   </div>
                 </div>
-
-                {/* Footer Bar & Book Button */}
                 <div className="p-6 pt-0 border-t border-neutral-100 flex items-center justify-between gap-4 mt-4">
-                  <div>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-xl font-black text-neutral-950">
-                        ₹{event.offer_price}
-                      </span>
-                      {event.mrp > event.offer_price && (
-                        <span className="text-xs text-neutral-400 line-through font-semibold">
-                          ₹{event.mrp}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[10px] uppercase font-bold text-neutral-400">
-                      Per Pass
-                    </span>
-                  </div>
-
-                  <div
-                    className={`py-2.5 px-5 rounded-xl font-extrabold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 ${
-                      isSoldOut
-                        ? 'bg-neutral-100 text-neutral-400'
-                        : 'bg-black text-white group-hover:bg-neutral-800 shadow-xs'
-                    }`}
-                  >
-                    <span>{!event.is_active ? 'Closed' : isSoldOut ? 'Sold Out' : 'Book Pass'}</span>
-                    {!isSoldOut && <ArrowRight className="w-3.5 h-3.5" />}
-                  </div>
+                  <div className="w-16 h-6 bg-neutral-200/70 rounded animate-pulse" />
+                  <div className="w-24 h-9 bg-neutral-200/70 rounded-xl animate-pulse" />
                 </div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        ) : events.length === 0 ? (
+          <div className="bg-neutral-50 border-2 border-dashed border-neutral-200 rounded-3xl p-12 text-center">
+            <Ticket className="w-10 h-10 text-neutral-300 mx-auto mb-3" />
+            <h3 className="font-bold text-neutral-800 text-base uppercase">
+              No Events Found
+            </h3>
+            <p className="text-xs text-neutral-500 mt-1 mb-6">
+              Be the first to host an event and start selling tickets in seconds!
+            </p>
+            <Link
+              href="/launch"
+              className="inline-flex items-center gap-2 py-3 px-6 bg-black text-white text-xs font-bold uppercase rounded-2xl hover:bg-neutral-800 transition-all shadow-xs"
+            >
+              <span>Launch Your Event</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {events.map((event) => {
+              const booked = event.booked_count || 0;
+              const remaining = Math.max(0, event.capacity - booked);
+              const eventEndTime = new Date(event.to_time || event.from_time).getTime();
+              const isPast = !isNaN(eventEndTime) && eventEndTime < Date.now();
+              const isSoldOut = remaining <= 0;
+              const isInactive = !event.is_active;
+              const creatorHandle = event.creator?.handle || 'creator';
+              const eventLink = `/${creatorHandle}/${event.id}`;
+              const fullEventUrl = `${getAppBaseUrl()}${eventLink}`;
+
+              let badgeText = `${remaining} Seats Left`;
+              let badgeClass = 'bg-white/95 backdrop-blur-xs text-neutral-900 border border-neutral-300';
+              let buttonText = 'Book Pass';
+              const isActionDisabled = isPast || isInactive || isSoldOut;
+
+              if (isPast) {
+                badgeText = 'EVENT ENDED';
+                badgeClass = 'bg-neutral-800 text-white';
+                buttonText = 'Ended';
+              } else if (isInactive) {
+                badgeText = 'BOOKINGS CLOSED';
+                badgeClass = 'bg-red-600 text-white';
+                buttonText = 'Closed';
+              } else if (isSoldOut) {
+                badgeText = 'SOLD OUT';
+                badgeClass = 'bg-black text-white';
+                buttonText = 'Sold Out';
+              }
+
+              return (
+                <div
+                  key={event.id}
+                  onClick={() => router.push(eventLink)}
+                  className="group bg-white rounded-3xl border-2 border-neutral-200 overflow-hidden hover:border-black transition-all hover:shadow-xl flex flex-col justify-between cursor-pointer"
+                >
+                  {/* Event Image Banner */}
+                  <div>
+                    <div className="relative h-48 w-full bg-neutral-100 overflow-hidden">
+                      <Image
+                        src={event.image_url || 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800&auto=format&fit=crop&q=80'}
+                        alt={event.title}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                      {/* Status Badge */}
+                      <div className="absolute top-3 left-3">
+                        <span className={`px-3 py-1 text-[11px] font-black uppercase tracking-wider rounded-full shadow-md ${badgeClass}`}>
+                          {badgeText}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedQrUrl({
+                            title: event.title,
+                            url: fullEventUrl,
+                          });
+                        }}
+                        className="absolute top-3 right-3 p-2 bg-white/95 backdrop-blur-xs text-neutral-900 rounded-full border border-neutral-300 hover:bg-black hover:text-white transition-colors shadow-sm"
+                        title="Share QR"
+                      >
+                        <QrCode className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Event Content */}
+                    <div className="p-6">
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/${creatorHandle}`);
+                        }}
+                        className="text-xs font-bold text-neutral-500 hover:text-black uppercase tracking-wider inline-block mb-2 hover:underline"
+                      >
+                        @{creatorHandle}
+                      </span>
+
+                      <h3 className="text-lg font-black text-neutral-950 leading-snug group-hover:underline">
+                        {event.title}
+                      </h3>
+
+                      <p className="text-xs text-neutral-600 line-clamp-2 mt-2 font-medium">
+                        {event.description}
+                      </p>
+
+                      <div className="mt-4 space-y-2 text-xs text-neutral-600">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-3.5 h-3.5 text-neutral-900 shrink-0" />
+                          <span>
+                            {new Date(event.from_time).toLocaleDateString('en-US', {
+                              weekday: 'short',
+                              month: 'short',
+                              day: 'numeric',
+                            })}{' '}
+                            • {new Date(event.from_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-neutral-900 shrink-0" />
+                          <span className="truncate">{event.location}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer Bar & Book Button */}
+                  <div className="p-6 pt-0 border-t border-neutral-100 flex items-center justify-between gap-4 mt-4">
+                    <div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-xl font-black text-neutral-950">
+                          {event.ticket_tiers && event.ticket_tiers.length > 1
+                            ? `From ₹${Math.min(...event.ticket_tiers.map((t) => t.offer_price))}`
+                            : `₹${event.offer_price}`}
+                        </span>
+                        {event.mrp > event.offer_price && (!event.ticket_tiers || event.ticket_tiers.length <= 1) && (
+                          <span className="text-xs text-neutral-400 line-through font-semibold">
+                            ₹{event.mrp}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] uppercase font-bold text-neutral-400">
+                        {event.ticket_tiers && event.ticket_tiers.length > 1
+                          ? `${event.ticket_tiers.length} Tiers Available`
+                          : 'Per Pass'}
+                      </span>
+                    </div>
+
+                    <div
+                      className={`py-2.5 px-5 rounded-xl font-extrabold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                        isActionDisabled
+                          ? 'bg-neutral-100 text-neutral-400'
+                          : 'bg-black text-white group-hover:bg-neutral-800 shadow-xs'
+                      }`}
+                    >
+                      <span>{buttonText}</span>
+                      {!isActionDisabled && <ArrowRight className="w-3.5 h-3.5" />}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Creator Fee & Direct Payout Notice Banner */}

@@ -20,6 +20,7 @@ export interface RazorpayCheckoutOptions {
   amount: number;
   eventId: string;
   ticketCount: number;
+  tierTitle?: string;
   attendeeName: string;
   attendeeEmail: string;
   attendeePhone: string;
@@ -41,6 +42,7 @@ export const initializeRazorpayPayment = async (options: RazorpayCheckoutOptions
         amount: options.amount,
         eventId: options.eventId,
         ticketCount: options.ticketCount,
+        tierTitle: options.tierTitle,
       }),
     });
 

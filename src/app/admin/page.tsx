@@ -26,10 +26,12 @@ import {
   X,
   Power,
   PowerOff,
+  Trash2,
+  Plus,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getEventsByCreatorId, createEvent, updateEvent, uploadImageFile } from '@/lib/supabase/db';
-import { EventItem, Booking, Creator } from '@/types';
+import { EventItem, Booking, Creator, TicketTier } from '@/types';
 import { getAppBaseUrl, getAppHost } from '@/lib/utils';
 import QRCodeModal from '@/components/QRCodeModal';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
@@ -54,7 +56,9 @@ export default function AdminPage() {
   const [toTime, setToTime] = useState('');
   const [mrp, setMrp] = useState<number>(499);
   const [offerPrice, setOfferPrice] = useState<number>(299);
-  const [capacity, setCapacity] = useState<number>(50);
+  const [ticketTiers, setTicketTiers] = useState<TicketTier[]>([
+    { title: 'Normal', mrp: 499, offer_price: 499, capacity: 50 },
+  ]);
   const [eventDescription, setEventDescription] = useState('');
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
@@ -75,6 +79,7 @@ export default function AdminPage() {
   const [editMrp, setEditMrp] = useState<number>(0);
   const [editOfferPrice, setEditOfferPrice] = useState<number>(0);
   const [editCapacity, setEditCapacity] = useState<number>(0);
+  const [editTicketTiers, setEditTicketTiers] = useState<TicketTier[]>([]);
   const [editIsActive, setEditIsActive] = useState<boolean>(true);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -82,7 +87,13 @@ export default function AdminPage() {
   const editImageInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingEditImage, setIsUploadingEditImage] = useState(false);
 
-  const nowMinIso = new Date().toISOString().slice(0, 16);
+  const formatToLocalDateTime = (dateStrOrObj: string | Date): string => {
+    const d = typeof dateStrOrObj === 'string' ? new Date(dateStrOrObj) : dateStrOrObj;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const nowMinIso = formatToLocalDateTime(new Date());
 
   const loadAdminData = async () => {
     if (!user) return;
@@ -111,8 +122,8 @@ export default function AdminPage() {
     const nextWeekEnd = new Date(nextWeek);
     nextWeekEnd.setHours(20, 0, 0, 0);
 
-    setFromTime(nextWeek.toISOString().slice(0, 16));
-    setToTime(nextWeekEnd.toISOString().slice(0, 16));
+    setFromTime(formatToLocalDateTime(nextWeek));
+    setToTime(formatToLocalDateTime(nextWeekEnd));
   }, [user, creator]);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -176,11 +187,16 @@ export default function AdminPage() {
     setEditLocation(evt.location);
     setEditLocationUrl(evt.location_url || '');
     setEditImageUrl(evt.image_url || '');
-    setEditFromTime(new Date(evt.from_time).toISOString().slice(0, 16));
-    setEditToTime(new Date(evt.to_time).toISOString().slice(0, 16));
+    setEditFromTime(formatToLocalDateTime(evt.from_time));
+    setEditToTime(formatToLocalDateTime(evt.to_time));
     setEditMrp(evt.mrp);
     setEditOfferPrice(evt.offer_price);
     setEditCapacity(evt.capacity);
+    setEditTicketTiers(
+      evt.ticket_tiers && evt.ticket_tiers.length > 0
+        ? JSON.parse(JSON.stringify(evt.ticket_tiers))
+        : [{ title: 'Normal', mrp: evt.mrp, offer_price: evt.offer_price }]
+    );
     setEditIsActive(evt.is_active !== false);
     setEditError(null);
     setEditSuccess(null);
@@ -194,9 +210,36 @@ export default function AdminPage() {
     setEditSuccess(null);
 
     const booked = editingEvent.booked_count || 0;
-    if (editCapacity < booked) {
-      setEditError(`Cannot reduce capacity to ${editCapacity}: ${booked} tickets are already booked.`);
+    const sumTierCapacity = editTicketTiers.reduce((acc, t) => acc + (Number(t.capacity) || 0), 0);
+    const effectiveCapacity = sumTierCapacity > 0 ? sumTierCapacity : Number(editCapacity) || editingEvent.capacity;
+
+    if (effectiveCapacity < booked) {
+      setEditError(`Cannot reduce capacity to ${effectiveCapacity}: ${booked} tickets are already booked.`);
       return;
+    }
+
+    if (editTicketTiers.length === 0) {
+      setEditError('At least one ticket pricing tier is required.');
+      return;
+    }
+
+    for (const tier of editTicketTiers) {
+      if (!tier.title.trim()) {
+        setEditError('All ticket tiers must have a title (e.g. Normal, Couple, VIP).');
+        return;
+      }
+      if (tier.offer_price < 0) {
+        setEditError('Offer price cannot be negative.');
+        return;
+      }
+      if (tier.mrp < tier.offer_price) {
+        setEditError(`MRP (₹${tier.mrp}) cannot be less than Offer Price (₹${tier.offer_price}) for "${tier.title}".`);
+        return;
+      }
+      if (!tier.capacity || Number(tier.capacity) <= 0) {
+        setEditError(`Please specify a valid seat capacity for "${tier.title}".`);
+        return;
+      }
     }
 
     const startDate = new Date(editFromTime);
@@ -210,6 +253,7 @@ export default function AdminPage() {
     setIsSavingEdit(true);
 
     try {
+      const primaryTier = editTicketTiers[0];
       const res = await updateEvent(editingEvent.id, {
         title: editTitle.trim(),
         description: editDescription.trim(),
@@ -219,9 +263,10 @@ export default function AdminPage() {
         image_url: editImageUrl.trim(),
         from_time: new Date(editFromTime).toISOString(),
         to_time: new Date(editToTime).toISOString(),
-        mrp: Number(editMrp) || 0,
-        offer_price: Number(editOfferPrice) || 0,
-        capacity: Number(editCapacity) || editingEvent.capacity,
+        mrp: Number(primaryTier.mrp) || Number(editMrp) || 0,
+        offer_price: Number(primaryTier.offer_price) || Number(editOfferPrice) || 0,
+        capacity: effectiveCapacity,
+        ticket_tiers: editTicketTiers,
         is_active: editIsActive,
       });
 
@@ -242,9 +287,10 @@ export default function AdminPage() {
                 image_url: editImageUrl.trim(),
                 from_time: new Date(editFromTime).toISOString(),
                 to_time: new Date(editToTime).toISOString(),
-                mrp: Number(editMrp) || 0,
-                offer_price: Number(editOfferPrice) || 0,
+                mrp: Number(primaryTier.mrp) || Number(editMrp) || 0,
+                offer_price: Number(primaryTier.offer_price) || Number(editOfferPrice) || 0,
                 capacity: Number(editCapacity) || e.capacity,
+                ticket_tiers: editTicketTiers,
                 is_active: editIsActive,
               }
             : e
@@ -312,9 +358,36 @@ export default function AdminPage() {
       return;
     }
 
+    if (ticketTiers.length === 0) {
+      setCreateError('Please add at least one ticket pricing tier (e.g. Normal, VIP).');
+      return;
+    }
+
+    for (const tier of ticketTiers) {
+      if (!tier.title.trim()) {
+        setCreateError('All ticket pricing tiers must have a title.');
+        return;
+      }
+      if (tier.offer_price < 0) {
+        setCreateError('Offer price cannot be negative.');
+        return;
+      }
+      if (tier.mrp < tier.offer_price) {
+        setCreateError(`MRP (₹${tier.mrp}) cannot be less than Offer Price (₹${tier.offer_price}) for "${tier.title}". If no discount, set both to the same price.`);
+        return;
+      }
+      if (!tier.capacity || Number(tier.capacity) <= 0) {
+        setCreateError(`Please specify a valid seat capacity for "${tier.title}".`);
+        return;
+      }
+    }
+
+    const totalCalculatedCapacity = ticketTiers.reduce((acc, t) => acc + (Number(t.capacity) || 0), 0);
+
     setIsCreatingEvent(true);
 
     try {
+      const primaryTier = ticketTiers[0];
       const newEvent = await createEvent({
         creator_id: creator.id,
         user_id: user.id,
@@ -327,9 +400,10 @@ export default function AdminPage() {
         from_time: startDate.toISOString(),
         to_time: endDate.toISOString(),
         is_active: true,
-        mrp: Number(mrp) || 0,
-        offer_price: Number(offerPrice) || 0,
-        capacity: Number(capacity) || 50,
+        mrp: Number(primaryTier.mrp) || 0,
+        offer_price: Number(primaryTier.offer_price) || 0,
+        capacity: totalCalculatedCapacity,
+        ticket_tiers: ticketTiers,
       });
 
       // Update state
@@ -340,6 +414,7 @@ export default function AdminPage() {
       setEventLocationUrl('');
       setEventDescription('');
       setEventImageUrl('');
+      setTicketTiers([{ title: 'Normal', mrp: 499, offer_price: 499, capacity: 50 }]);
       if (eventImageInputRef.current) {
         eventImageInputRef.current.value = '';
       }
@@ -662,9 +737,17 @@ export default function AdminPage() {
                       {/* Pricing and Capacity Status Bar */}
                       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200 text-xs">
                         <div>
-                          <span className="text-[10px] uppercase font-bold text-neutral-400 block">Ticket Price</span>
-                          <span className="font-black text-sm text-neutral-900">₹{evt.offer_price}</span>
-                          {evt.mrp > evt.offer_price && (
+                          <span className="text-[10px] uppercase font-bold text-neutral-400 block">
+                            {evt.ticket_tiers && evt.ticket_tiers.length > 1
+                              ? `Pricing (${evt.ticket_tiers.length} Tiers)`
+                              : 'Ticket Price'}
+                          </span>
+                          <span className="font-black text-sm text-neutral-900">
+                            {evt.ticket_tiers && evt.ticket_tiers.length > 1
+                              ? `From ₹${Math.min(...evt.ticket_tiers.map(t => t.offer_price))}`
+                              : `₹${evt.offer_price}`}
+                          </span>
+                          {evt.mrp > evt.offer_price && (!evt.ticket_tiers || evt.ticket_tiers.length <= 1) && (
                             <span className="text-[11px] text-neutral-400 line-through ml-1.5 font-semibold">MRP ₹{evt.mrp}</span>
                           )}
                         </div>
@@ -858,47 +941,203 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* Pricing & Capacity */}
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-black uppercase text-neutral-800 mb-1.5">
-                    MRP (₹)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={mrp}
-                    onChange={(e) => setMrp(Number(e.target.value))}
-                    className="w-full px-4 py-3 rounded-xl border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none bg-neutral-50/50"
-                  />
+              {/* Dynamic Pricing Tiers (Minimum 1 Required with Plus Button) */}
+              <div className="p-5 rounded-2xl bg-neutral-50 border border-neutral-200 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-neutral-900 flex items-center gap-1.5">
+                      <span>Ticket Pricing Tiers & Capacities</span>
+                      <span className="text-[10px] text-neutral-400 font-bold">(Minimum 1 required)</span>
+                    </h3>
+                    <p className="text-[11px] text-neutral-500 mt-0.5">
+                      Total event capacity is automatically calculated as the sum of all tier capacities.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-xl bg-black text-white text-xs font-black uppercase tracking-wide">
+                      Total Seats: {ticketTiers.reduce((acc, t) => acc + (Number(t.capacity) || 0), 0)}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTicketTiers([
+                          ...ticketTiers,
+                          { title: '', mrp: 499, offer_price: 499, capacity: 25 },
+                        ]);
+                      }}
+                      className="py-1.5 px-3 bg-black text-white text-xs font-bold uppercase rounded-xl hover:bg-neutral-800 transition-all flex items-center gap-1 shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Tier</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-black uppercase text-neutral-800 mb-1.5">
-                    Offer Price (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    value={offerPrice}
-                    onChange={(e) => setOfferPrice(Number(e.target.value))}
-                    className="w-full px-4 py-3 rounded-xl border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none bg-neutral-50/50"
-                  />
-                </div>
+                <div className="space-y-3">
+                  {ticketTiers.map((tier, idx) => {
+                    const hasOffer = tier.mrp > tier.offer_price;
+                    return (
+                      <div
+                        key={idx}
+                        className="p-4 bg-white rounded-2xl border border-neutral-200 shadow-xs space-y-3"
+                      >
+                        {/* Top row: Tier title, Seats, and Delete */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[10px] uppercase font-bold text-neutral-400 mb-1">
+                              Tier Title *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={tier.title}
+                              onChange={(e) => {
+                                const updated = [...ticketTiers];
+                                updated[idx].title = e.target.value;
+                                setTicketTiers(updated);
+                              }}
+                              placeholder="e.g. Normal, Couple, VIP"
+                              className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none"
+                            />
+                          </div>
 
-                <div>
-                  <label className="block text-xs font-black uppercase text-neutral-800 mb-1.5">
-                    Capacity (Seats) *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={capacity}
-                    onChange={(e) => setCapacity(Number(e.target.value))}
-                    className="w-full px-4 py-3 rounded-xl border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none bg-neutral-50/50"
-                  />
+                          <div className="w-full sm:w-36">
+                            <label className="block text-[10px] uppercase font-bold text-neutral-400 mb-1">
+                              Seats (Cap) *
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              required
+                              value={tier.capacity || ''}
+                              onChange={(e) => {
+                                const updated = [...ticketTiers];
+                                updated[idx].capacity = Math.max(1, Number(e.target.value));
+                                setTicketTiers(updated);
+                              }}
+                              placeholder="e.g. 50"
+                              className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="sm:self-end pt-1 sm:pt-0">
+                            <button
+                              type="button"
+                              disabled={ticketTiers.length <= 1}
+                              onClick={() => {
+                                if (ticketTiers.length > 1) {
+                                  setTicketTiers(ticketTiers.filter((_, i) => i !== idx));
+                                }
+                              }}
+                              title={ticketTiers.length <= 1 ? 'Minimum 1 tier is required' : 'Delete Tier'}
+                              className={`p-2.5 rounded-xl border transition-colors ${
+                                ticketTiers.length <= 1
+                                  ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
+                                  : 'border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 cursor-pointer'
+                              }`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Bottom row: MRP first, then Offer Toggle & Offer Price */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-neutral-100">
+                          {/* 1. MRP (Standard Price) */}
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-neutral-500 mb-1">
+                              Standard Ticket Price (MRP ₹) *
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              required
+                              value={tier.mrp}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                const updated = [...ticketTiers];
+                                updated[idx].mrp = val;
+                                // If not having an offer discount, keep offer price equal to MRP
+                                if (!hasOffer || updated[idx].offer_price > val) {
+                                  updated[idx].offer_price = val;
+                                }
+                                setTicketTiers(updated);
+                              }}
+                              placeholder="e.g. 499"
+                              className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none"
+                            />
+                          </div>
+
+                          {/* 2. Offer Discount & Discounted Price */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] uppercase font-bold text-neutral-500">
+                                Offer Price (₹)
+                              </label>
+
+                              {/* Minimal Clean Switch */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...ticketTiers];
+                                  if (hasOffer) {
+                                    updated[idx].offer_price = updated[idx].mrp;
+                                  } else {
+                                    const discounted = Math.max(1, Math.round(updated[idx].mrp * 0.8));
+                                    updated[idx].offer_price = discounted;
+                                  }
+                                  setTicketTiers(updated);
+                                }}
+                                className="flex items-center gap-1.5 cursor-pointer group select-none"
+                              >
+                                <span className={`text-[10px] font-semibold transition-colors ${hasOffer ? 'text-black font-bold' : 'text-neutral-400 group-hover:text-neutral-600'}`}>
+                                  {hasOffer ? 'Offer applied' : 'Apply offer'}
+                                </span>
+                                <div
+                                  className={`w-7 h-4 rounded-full transition-colors relative flex items-center p-0.5 ${
+                                    hasOffer ? 'bg-black' : 'bg-neutral-200 group-hover:bg-neutral-300'
+                                  }`}
+                                >
+                                  <div
+                                    className={`w-3 h-3 rounded-full bg-white transition-transform ${
+                                      hasOffer ? 'translate-x-3' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </div>
+                              </button>
+                            </div>
+
+                            <input
+                              type="number"
+                              min="0"
+                              max={tier.mrp}
+                              disabled={!hasOffer}
+                              value={tier.offer_price}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                const updated = [...ticketTiers];
+                                updated[idx].offer_price = Math.min(val, updated[idx].mrp);
+                                setTicketTiers(updated);
+                              }}
+                              placeholder={tier.mrp.toString()}
+                              className={`w-full px-3 py-2 rounded-xl border text-xs font-bold focus:border-black focus:outline-none transition-all ${
+                                !hasOffer
+                                  ? 'bg-neutral-50 border-neutral-200 text-neutral-400 cursor-not-allowed'
+                                  : 'bg-white border-neutral-300 text-neutral-900'
+                              }`}
+                            />
+                            {hasOffer && (
+                              <p className="text-[10px] text-neutral-500 font-medium mt-1">
+                                Saves ₹{tier.mrp - tier.offer_price} ({Math.round(((tier.mrp - tier.offer_price) / tier.mrp) * 100)}% off)
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1014,47 +1253,202 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              {/* Pricing & Capacity Row */}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-black uppercase text-neutral-800 mb-1">
-                    MRP Price (₹)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editMrp}
-                    onChange={(e) => setEditMrp(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none bg-neutral-50"
-                  />
+              {/* Dynamic Pricing Tiers in Edit Modal */}
+              <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-black uppercase text-neutral-900 flex items-center gap-1.5">
+                      <span>Pricing Tiers & Seat Limits</span>
+                      <span className="text-[10px] text-neutral-400 font-bold">(Minimum 1 required)</span>
+                    </h4>
+                    <p className="text-[11px] text-neutral-500">
+                      Edit names, capacities, and prices. Total capacity is auto-synced to sum of all tiers.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg bg-black text-white text-[11px] font-black uppercase">
+                      Total: {editTicketTiers.reduce((acc, t) => acc + (Number(t.capacity) || 0), 0)} Seats
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditTicketTiers([
+                          ...editTicketTiers,
+                          { title: '', mrp: 499, offer_price: 499, capacity: 25 },
+                        ]);
+                      }}
+                      className="py-1 px-2.5 bg-black text-white text-[11px] font-bold uppercase rounded-lg hover:bg-neutral-800 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Add Tier</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-black uppercase text-neutral-800 mb-1">
-                    Offer Price (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    value={editOfferPrice}
-                    onChange={(e) => setEditOfferPrice(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none bg-neutral-50"
-                  />
-                </div>
+                <div className="space-y-2.5">
+                  {editTicketTiers.map((tier, idx) => {
+                    const hasOffer = tier.mrp > tier.offer_price;
+                    return (
+                      <div
+                        key={idx}
+                        className="p-3.5 bg-white rounded-xl border border-neutral-200 shadow-xs space-y-3"
+                      >
+                        {/* Top row: Tier Title & Seats Cap & Delete */}
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                          <div className="flex-1">
+                            <label className="block text-[10px] uppercase font-bold text-neutral-500 mb-1">
+                              Tier Title *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={tier.title}
+                              onChange={(e) => {
+                                const updated = [...editTicketTiers];
+                                updated[idx].title = e.target.value;
+                                setEditTicketTiers(updated);
+                              }}
+                              placeholder="e.g. Normal, Couple, VIP"
+                              className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none"
+                            />
+                          </div>
 
-                <div>
-                  <label className="block text-xs font-black uppercase text-neutral-800 mb-1">
-                    Capacity (Seats) *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={editCapacity}
-                    onChange={(e) => setEditCapacity(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none bg-neutral-50"
-                  />
+                          <div className="w-full sm:w-36">
+                            <label className="block text-[10px] uppercase font-bold text-neutral-500 mb-1">
+                              Seats (Cap) *
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              required
+                              value={tier.capacity || ''}
+                              onChange={(e) => {
+                                const updated = [...editTicketTiers];
+                                updated[idx].capacity = Math.max(1, Number(e.target.value));
+                                setEditTicketTiers(updated);
+                              }}
+                              placeholder="e.g. 50"
+                              className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="self-end sm:self-center pt-1 sm:pt-4">
+                            <button
+                              type="button"
+                              disabled={editTicketTiers.length <= 1}
+                              onClick={() => {
+                                if (editTicketTiers.length > 1) {
+                                  setEditTicketTiers(editTicketTiers.filter((_, i) => i !== idx));
+                                }
+                              }}
+                              title={editTicketTiers.length <= 1 ? 'Minimum 1 tier is required' : 'Delete Tier'}
+                              className={`p-2 rounded-lg border transition-colors ${
+                                editTicketTiers.length <= 1
+                                  ? 'border-neutral-200 text-neutral-300 cursor-not-allowed'
+                                  : 'border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 cursor-pointer'
+                              }`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Bottom row: MRP first, then Offer Toggle & Offer Price */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-neutral-100">
+                          {/* 1. MRP (Standard Price) */}
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-neutral-500 mb-1">
+                              Standard Ticket Price (MRP ₹) *
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              required
+                              value={tier.mrp}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                const updated = [...editTicketTiers];
+                                updated[idx].mrp = val;
+                                if (!hasOffer || updated[idx].offer_price > val) {
+                                  updated[idx].offer_price = val;
+                                }
+                                setEditTicketTiers(updated);
+                              }}
+                              placeholder="e.g. 499"
+                              className="w-full px-3 py-1.5 rounded-lg border border-neutral-300 text-xs font-bold text-neutral-900 focus:border-black focus:outline-none"
+                            />
+                          </div>
+
+                          {/* 2. Offer Discount & Discounted Price */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[10px] uppercase font-bold text-neutral-500">
+                                Offer Price (₹)
+                              </label>
+
+                              {/* Minimal Clean Switch */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...editTicketTiers];
+                                  if (hasOffer) {
+                                    updated[idx].offer_price = updated[idx].mrp;
+                                  } else {
+                                    const discounted = Math.max(1, Math.round(updated[idx].mrp * 0.8));
+                                    updated[idx].offer_price = discounted;
+                                  }
+                                  setEditTicketTiers(updated);
+                                }}
+                                className="flex items-center gap-1.5 cursor-pointer group select-none"
+                              >
+                                <span className={`text-[10px] font-semibold transition-colors ${hasOffer ? 'text-black font-bold' : 'text-neutral-400 group-hover:text-neutral-600'}`}>
+                                  {hasOffer ? 'Offer applied' : 'Apply offer'}
+                                </span>
+                                <div
+                                  className={`w-7 h-4 rounded-full transition-colors relative flex items-center p-0.5 ${
+                                    hasOffer ? 'bg-black' : 'bg-neutral-200 group-hover:bg-neutral-300'
+                                  }`}
+                                >
+                                  <div
+                                    className={`w-3 h-3 rounded-full bg-white transition-transform ${
+                                      hasOffer ? 'translate-x-3' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </div>
+                              </button>
+                            </div>
+
+                            <input
+                              type="number"
+                              min="0"
+                              max={tier.mrp}
+                              disabled={!hasOffer}
+                              value={tier.offer_price}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                const updated = [...editTicketTiers];
+                                updated[idx].offer_price = Math.min(val, updated[idx].mrp);
+                                setEditTicketTiers(updated);
+                              }}
+                              placeholder={tier.mrp.toString()}
+                              className={`w-full px-3 py-1.5 rounded-lg border text-xs font-bold focus:border-black focus:outline-none transition-all ${
+                                !hasOffer
+                                  ? 'bg-neutral-50 border-neutral-200 text-neutral-400 cursor-not-allowed'
+                                  : 'bg-white border-neutral-300 text-neutral-900'
+                              }`}
+                            />
+                            {hasOffer && (
+                              <p className="text-[10px] text-neutral-500 font-medium mt-1">
+                                Saves ₹{tier.mrp - tier.offer_price} ({Math.round(((tier.mrp - tier.offer_price) / tier.mrp) * 100)}% off)
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1074,7 +1468,7 @@ export default function AdminPage() {
                         // Auto push end time forward
                         const newStart = new Date(e.target.value);
                         newStart.setHours(newStart.getHours() + 2);
-                        setEditToTime(newStart.toISOString().slice(0, 16));
+                        setEditToTime(formatToLocalDateTime(newStart));
                       }
                     }}
                     className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs font-semibold text-neutral-900 focus:border-black focus:outline-none bg-neutral-50"

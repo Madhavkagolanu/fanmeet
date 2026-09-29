@@ -176,7 +176,9 @@ export default function BookingsPage() {
                   </div>
 
                   <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-neutral-400 block">Passes</span>
+                    <span className="text-[10px] uppercase font-bold text-neutral-400 block">
+                      {booking.tier_title ? `Tier: ${booking.tier_title}` : 'Passes'}
+                    </span>
                     <span className="font-bold text-neutral-900">{booking.ticket_count} Pass (₹{booking.amount_paid})</span>
                   </div>
                 </div>

@@ -286,10 +286,10 @@ export async function getEventById(eventId: string): Promise<EventItem | null> {
       return null;
     }
 
-    // Fetch booked count
+    // Fetch booked count including tier_title breakdown
     const { data: bookingsData } = await supabase
       .from('bookings')
-      .select('ticket_count')
+      .select('ticket_count, tier_title')
       .eq('event_id', eventId)
       .in('status', ['confirmed', 'pending']);
 
@@ -298,8 +298,26 @@ export async function getEventById(eventId: string): Promise<EventItem | null> {
       0
     );
 
+    const tierBookedMap: Record<string, number> = {};
+    (bookingsData || []).forEach((b: any) => {
+      const key = (b.tier_title || '').trim().toLowerCase();
+      tierBookedMap[key] = (tierBookedMap[key] || 0) + (Number(b.ticket_count) || 1);
+    });
+
+    let updatedTiers = evt.ticket_tiers;
+    if (Array.isArray(updatedTiers) && updatedTiers.length > 0) {
+      updatedTiers = updatedTiers.map((tier: any) => {
+        const key = (tier.title || '').trim().toLowerCase();
+        return {
+          ...tier,
+          booked_count: tierBookedMap[key] || 0,
+        };
+      });
+    }
+
     return {
       ...evt,
+      ticket_tiers: updatedTiers,
       booked_count: bookedCount,
       creator: evt.creator || undefined,
     } as EventItem;
@@ -371,6 +389,10 @@ export async function createEvent(eventInput: Omit<EventItem, 'id' | 'created_at
     offer_price: eventInput.offer_price,
     capacity: eventInput.capacity,
   };
+
+  if (eventInput.ticket_tiers) {
+    insertPayload.ticket_tiers = eventInput.ticket_tiers;
+  }
 
   if (eventInput.location_address) {
     insertPayload.location_address = eventInput.location_address;
