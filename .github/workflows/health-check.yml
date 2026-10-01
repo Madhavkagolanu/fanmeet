@@ -1,0 +1,19 @@
+name: Scheduled Health Check
+
+on:
+  schedule:
+    # Runs every 5 days at 06:00 UTC
+    - cron: '0 6 */5 * *'
+  workflow_dispatch:
+
+jobs:
+  uptime-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Websites
+        run: |
+          echo "Checking orox.in..."
+          curl -sSf -m 30 -o /dev/null -w "orox.in response: %{http_code}\n" https://orox.in
+
+          echo "Checking fanmeet.orox.in..."
+          curl -sSf -m 30 -o /dev/null -w "fanmeet.orox.in response: %{http_code}\n" https://fanmeet.orox.in
