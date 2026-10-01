@@ -10,7 +10,7 @@ import Avatar from './Avatar';
 
 export default function Navbar() {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { user, creator } = useAuth();
+  const { user, creator, isLoading } = useAuth();
 
   return (
     <>
@@ -27,8 +27,11 @@ export default function Navbar() {
 
           {/* Right Navigation Controls */}
           <div className="flex items-center gap-3 sm:gap-4">
-            {/* If Creator exists, show Preview and Admin buttons */}
-            {creator ? (
+            {isLoading ? (
+              <div className="hidden sm:flex items-center gap-3">
+                <div className="w-36 h-9 rounded-full skeleton-shimmer" />
+              </div>
+            ) : creator ? (
               <div className="hidden sm:flex items-center gap-3">
                 <a
                   href={`/${creator.handle}`}

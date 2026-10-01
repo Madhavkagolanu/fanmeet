@@ -38,7 +38,7 @@ import GoogleSignInButton from '@/components/GoogleSignInButton';
 import Avatar from '@/components/Avatar';
 
 export default function AdminPage() {
-  const { user, creator, updateCreatorProfile } = useAuth();
+  const { user, creator, isLoading: isAuthLoading, updateCreatorProfile } = useAuth();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'events' | 'create'>('events');
@@ -436,6 +436,44 @@ export default function AdminPage() {
     }
   };
 
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-white py-12 pb-28">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200 pb-6">
+            <div className="space-y-2">
+              <div className="w-28 h-6 rounded-full skeleton-shimmer" />
+              <div className="w-48 h-8 rounded-lg skeleton-shimmer" />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-32 h-10 rounded-xl skeleton-shimmer" />
+              <div className="w-36 h-10 rounded-xl skeleton-shimmer" />
+            </div>
+          </div>
+          <div className="p-6 bg-neutral-50 rounded-3xl border border-neutral-200 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-full skeleton-shimmer" />
+              <div className="space-y-2">
+                <div className="w-36 h-5 rounded skeleton-shimmer" />
+                <div className="w-24 h-4 rounded skeleton-shimmer" />
+              </div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className="w-40 h-6 rounded skeleton-shimmer" />
+            {[1, 2].map((n) => (
+              <div key={n} className="p-6 rounded-3xl border-2 border-neutral-100 bg-white space-y-3">
+                <div className="w-32 h-4 rounded skeleton-shimmer" />
+                <div className="w-2/3 h-6 rounded skeleton-shimmer" />
+                <div className="w-1/2 h-4 rounded skeleton-shimmer" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="max-w-md mx-auto px-4 py-24 text-center">
@@ -618,7 +656,33 @@ export default function AdminPage() {
               </button>
             </div>
 
-            {events.length === 0 ? (
+            {loading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map((n) => (
+                  <div
+                    key={n}
+                    className="bg-white rounded-3xl border-2 border-neutral-100 p-6 shadow-xs space-y-4"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                      <div className="space-y-2 flex-1">
+                        <div className="w-32 h-4 rounded-full skeleton-shimmer" />
+                        <div className="w-3/5 h-6 rounded-lg skeleton-shimmer" />
+                        <div className="w-4/5 h-4 rounded skeleton-shimmer" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-24 h-9 rounded-xl skeleton-shimmer" />
+                        <div className="w-20 h-9 rounded-xl skeleton-shimmer" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-neutral-100">
+                      {[1, 2, 3, 4].map((i) => (
+                        <div key={i} className="h-12 rounded-xl skeleton-shimmer" />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : events.length === 0 ? (
               <div className="bg-neutral-50 border-2 border-dashed border-neutral-200 rounded-3xl p-12 text-center space-y-3">
                 <Calendar className="w-10 h-10 text-neutral-300 mx-auto" />
                 <h3 className="font-bold text-neutral-800 text-base uppercase">

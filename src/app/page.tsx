@@ -113,7 +113,7 @@ export default function HomePage() {
                 {[1, 2, 3].map((n) => (
                   <span
                     key={n}
-                    className="inline-block w-20 h-6 bg-neutral-200/70 rounded-full animate-pulse"
+                    className="inline-block w-20 h-6 rounded-full skeleton-shimmer"
                   />
                 ))}
               </div>
@@ -163,21 +163,21 @@ export default function HomePage() {
                 className="bg-white rounded-3xl border-2 border-neutral-100 overflow-hidden shadow-xs flex flex-col justify-between"
               >
                 <div>
-                  <div className="h-48 w-full bg-neutral-200/70 animate-pulse" />
+                  <div className="h-48 w-full skeleton-shimmer" />
                   <div className="p-6 space-y-3">
-                    <div className="w-20 h-4 bg-neutral-200/70 rounded animate-pulse" />
-                    <div className="w-4/5 h-6 bg-neutral-200/70 rounded animate-pulse" />
-                    <div className="w-full h-3 bg-neutral-200/70 rounded animate-pulse" />
-                    <div className="w-2/3 h-3 bg-neutral-200/70 rounded animate-pulse" />
+                    <div className="w-20 h-4 rounded skeleton-shimmer" />
+                    <div className="w-4/5 h-6 rounded-lg skeleton-shimmer" />
+                    <div className="w-full h-3 rounded skeleton-shimmer" />
+                    <div className="w-2/3 h-3 rounded skeleton-shimmer" />
                     <div className="pt-2 space-y-2">
-                      <div className="w-1/2 h-3 bg-neutral-200/70 rounded animate-pulse" />
-                      <div className="w-1/3 h-3 bg-neutral-200/70 rounded animate-pulse" />
+                      <div className="w-1/2 h-3 rounded skeleton-shimmer" />
+                      <div className="w-1/3 h-3 rounded skeleton-shimmer" />
                     </div>
                   </div>
                 </div>
                 <div className="p-6 pt-0 border-t border-neutral-100 flex items-center justify-between gap-4 mt-4">
-                  <div className="w-16 h-6 bg-neutral-200/70 rounded animate-pulse" />
-                  <div className="w-24 h-9 bg-neutral-200/70 rounded-xl animate-pulse" />
+                  <div className="w-16 h-6 rounded skeleton-shimmer" />
+                  <div className="w-24 h-9 rounded-xl skeleton-shimmer" />
                 </div>
               </div>
             ))}

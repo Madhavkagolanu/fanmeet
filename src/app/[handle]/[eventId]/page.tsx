@@ -130,15 +130,33 @@ export default function EventDetailPage() {
           },
         ];
 
-  const currentTier = availableTiers[selectedTierIndex] || availableTiers[0];
   const bookedCount = event.booked_count || 0;
   const remainingTotalSeats = Math.max(0, event.capacity - bookedCount);
+
+  // Determine effective selected tier: if the chosen tier is sold out, automatically resolve to first unsold tier if available
+  const chosenTierObj = availableTiers[selectedTierIndex] || availableTiers[0];
+  const chosenTierCap = chosenTierObj.capacity || event.capacity;
+  const chosenTierBooked = chosenTierObj.booked_count || 0;
+  const isChosenTierSoldOut = chosenTierCap - chosenTierBooked <= 0;
+
+  const firstAvailableIdx = availableTiers.findIndex((t) => {
+    const cap = t.capacity || event.capacity;
+    const bkd = t.booked_count || 0;
+    return cap - bkd > 0;
+  });
+
+  const effectiveTierIndex =
+    isChosenTierSoldOut && firstAvailableIdx !== -1 ? firstAvailableIdx : selectedTierIndex;
+  const currentTier = availableTiers[effectiveTierIndex] || availableTiers[0];
 
   // Tier-specific remaining calculation
   const currentTierCapacity = currentTier.capacity || event.capacity;
   const currentTierBooked = currentTier.booked_count || 0;
   const currentTierRemaining = Math.max(0, currentTierCapacity - currentTierBooked);
   const remainingSeats = Math.min(remainingTotalSeats, currentTierRemaining);
+
+  // Clamp effective ticketCount
+  const effectiveTicketCount = remainingSeats > 0 ? Math.min(Math.max(1, ticketCount), remainingSeats) : 1;
 
   const eventEndTime = new Date(event.to_time || event.from_time).getTime();
   const isPast = !isNaN(eventEndTime) && eventEndTime < Date.now();
@@ -148,8 +166,8 @@ export default function EventDetailPage() {
   const isBookingClosed = isPast || isInactive || isSoldOut || isCurrentTierSoldOut;
   const unitPrice = currentTier.offer_price;
   const unitMrp = currentTier.mrp;
-  const totalPrice = ticketCount * unitPrice;
-  const totalSavings = ticketCount * Math.max(0, unitMrp - unitPrice);
+  const totalPrice = effectiveTicketCount * unitPrice;
+  const totalSavings = effectiveTicketCount * Math.max(0, unitMrp - unitPrice);
 
   const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,7 +186,7 @@ export default function EventDetailPage() {
       return;
     }
 
-    if (remainingSeats < ticketCount) {
+    if (remainingSeats < effectiveTicketCount) {
       setBookingError(`Only ${remainingSeats} ticket(s) remaining for "${currentTier.title}".`);
       return;
     }
@@ -184,7 +202,7 @@ export default function EventDetailPage() {
       await initializeRazorpayPayment({
         amount: totalPrice,
         eventId: event.id,
-        ticketCount: ticketCount,
+        ticketCount: effectiveTicketCount,
         attendeeName,
         attendeeEmail,
         attendeePhone,
@@ -198,7 +216,7 @@ export default function EventDetailPage() {
               body: JSON.stringify({
                 eventId: event.id,
                 userId: user?.id || null,
-                ticketCount,
+                ticketCount: effectiveTicketCount,
                 amountPaid: totalPrice,
                 attendeeName,
                 attendeeEmail,
@@ -225,7 +243,7 @@ export default function EventDetailPage() {
               razorpay_order_id: paymentData.orderId,
               razorpay_payment_id: paymentData.paymentId,
               razorpay_signature: paymentData.signature,
-              ticket_count: ticketCount,
+              ticket_count: effectiveTicketCount,
               amount_paid: totalPrice,
               tier_title: currentTier.title,
               attendee_name: attendeeName,
@@ -243,14 +261,14 @@ export default function EventDetailPage() {
               if (!prev) return prev;
               const updatedTiers = (prev.ticket_tiers || []).map((t) => {
                 if ((t.title || '').trim().toLowerCase() === currentTier.title.trim().toLowerCase()) {
-                  return { ...t, booked_count: (t.booked_count || 0) + ticketCount };
+                  return { ...t, booked_count: (t.booked_count || 0) + effectiveTicketCount };
                 }
                 return t;
               });
               return {
                 ...prev,
                 ticket_tiers: updatedTiers,
-                booked_count: (prev.booked_count || 0) + ticketCount,
+                booked_count: (prev.booked_count || 0) + effectiveTicketCount,
               };
             });
             setConfirmedBooking(newBooking);
@@ -533,7 +551,7 @@ export default function EventDetailPage() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {availableTiers.map((tier, idx) => {
-                        const isSelected = selectedTierIndex === idx;
+                        const isSelected = effectiveTierIndex === idx;
                         const savings = Math.max(0, tier.mrp - tier.offer_price);
                         const tierCap = tier.capacity || event.capacity;
                         const tierBooked = tier.booked_count || 0;
@@ -633,7 +651,7 @@ export default function EventDetailPage() {
                       <div className="flex items-center gap-2">
                         {[1, 2, 3, 4].map((num) => {
                           if (num > remainingSeats) return null;
-                          const isSelected = ticketCount === num;
+                          const isSelected = effectiveTicketCount === num;
                           return (
                             <button
                               key={num}
